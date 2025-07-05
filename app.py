@@ -1,38 +1,33 @@
 from flask import Flask, request, jsonify
+import os
+import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 app = Flask(__name__)
 
-# Google Sheets setup
+# Setup Google Sheets credentials
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("client_secret.json", scope)
+creds_json = os.environ.get("GOOGLE_CREDS_JSON")
+if not creds_json:
+    raise ValueError("Missing GOOGLE_CREDS_JSON environment variable")
+
+creds_dict = json.loads(creds_json)
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
-sheet = client.open("Orders").sheet1
+sheet = client.open("Orders").sheet1  # replace with your Google Sheet name
 
-# Product catalog
-products = {
-    "1": {"name": "Keychain", "price": 69},
-    "2": {"name": "Wooden Clock", "price": 1099}
-}
-
-# Endpoint to handle order requests
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.json
-    user_input = data.get("user_input", "").lower()
+    user_message = data.get("message")
+    sender_id = data.get("sender_id")
+    sheet.append_row([sender_id, user_message])
+    return jsonify({"reply": "Order received. We'll contact you soon."})
 
-    if "order" in user_input:
-        product_id = "1" if "keychain" in user_input else "2" if "clock" in user_input else None
-        if product_id:
-            product = products[product_id]
-            # Add order to Google Sheet
-            sheet.append_row([product["name"], product["price"]])
-            return jsonify({"reply": f"✅ Order placed for {product['name']} - ₹{product['price']}!"})
-        else:
-            return jsonify({"reply": "❌ Sorry, we couldn't find that product. Please try again."})
-    else:
-        return jsonify({"reply": "👋 Hi! To place an order, type: 'order keychain' or 'order clock'."})
+@app.route("/", methods=["GET"])
+def home():
+    return "🤖 Chatbot is running!"
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
